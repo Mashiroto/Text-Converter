@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Font Changer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #0a0a0a, #1c1c1e, #111113);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    color: #eee;
+  }
+
+  .card {
+    width: 100%;
+    max-width: 640px;
+    background: rgba(255,255,255,0.04);
+    backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 20px;
+    padding: 28px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+  }
+
+  .controls {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+    justify-content: flex-end;
+  }
+
+  select {
+    background: rgba(255,255,255,0.07);
+    color: #eee;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 14px;
+    cursor: pointer;
+    outline: none;
+  }
+  select option { color: #ddd; background: #1a1a1c; }
+
+  h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    opacity: 0.55;
+    margin: 22px 0 10px;
+  }
+  h2:first-of-type { margin-top: 0; }
+
+  textarea {
+    width: 100%;
+    height: 110px;
+    resize: vertical;
+    background: rgba(0,0,0,0.45);
+    border: 1px solid rgba(255,255,255,0.13);
+    border-radius: 14px;
+    color: #eee;
+    padding: 14px;
+    font-size: 17px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  textarea:focus { border-color: #888; }
+
+  .output-wrap { position: relative; }
+
+  .output {
+    background: rgba(0,0,0,0.45);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 14px;
+    padding: 18px 14px;
+    font-size: 22px;
+    word-break: break-word;
+    line-height: 1.5;
+    min-height: 70px;
+    cursor: pointer;
+    transition: transform .15s, border-color .2s;
+  }
+  .output:hover { border-color: #999; }
+  .output:active { transform: scale(0.99); }
+
+  .copy-icon {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    opacity: 0.4;
+    font-size: 18px;
+    pointer-events: none;
+    transition: opacity .2s;
+  }
+  .output:hover .copy-icon { opacity: 0.8; }
+
+  .copy-btn {
+    display: block;
+    margin-top: 12px;
+    width: 100%;
+    background: linear-gradient(90deg, #3a3a3d, #2a2a2d);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 12px;
+    color: #eee;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 11px;
+    cursor: pointer;
+    transition: background .2s, transform .1s;
+  }
+  .copy-btn:hover { background: linear-gradient(90deg, #4a4a4e, #35353a); }
+  .copy-btn:active { transform: scale(0.98); }
+
+  .hint {
+    margin-top: 10px;
+    font-size: 12px;
+    opacity: 0.4;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="controls">
+    <select id="styleSelect"></select>
+  </div>
+
+  <h2>Input</h2>
+  <textarea id="input" placeholder="Type your text here...">Hello World 123</textarea>
+
+  <h2>Output</h2>
+  <div class="output-wrap">
+    <div class="output" id="output" title="Click to copy"></div>
+    <span class="copy-icon" title="Copy">⧉</span>
+  </div>
+
+  <button class="copy-btn" id="copyBtn">⧉ Click to copy</button>
+  <p class="hint">Characters without a Unicode equivalent stay normal.</p>
+</div>
+
+<script>
+const A = "A".charCodeAt(0);
+const a = "a".charCodeAt(0);
+const N = "0".charCodeAt(0);
+
+// Full mapping style (upper + lower + digits each have their own glyphs)
+function mapStyle(name, upperOff, lowerOff, digitOff) {
+  return {
+    name,
+    transform(c) {
+      const code = c.charCodeAt(0);
+      if (code >= A && code <= A + 25 && upperOff !== null) return String.fromCodePoint(code + upperOff);
+      if (code >= a && code <= a + 25 && lowerOff !== null) return String.fromCodePoint(code + lowerOff);
+      if (code >= N && code <= N + 9 && digitOff !== null) return String.fromCodePoint(code + digitOff);
+      return c;
+    }
+  };
+}
+
+// Single-alphabet style: both upper AND lower case map to the one alphabet
+function singleAlphabetStyle(name, baseOffset) {
+  return {
+    name,
+    transform(c) {
+      const code = c.charCodeAt(0);
+      const isUpper = code >= A && code <= A + 25;
+      const isLower = code >= a && code <= a + 25;
+      if (isUpper || isLower) {
+        const index = isUpper ? code - A : code - a;
+        return String.fromCodePoint(baseOffset + index);
+      }
+      return c;
+    }
+  };
+}
+
+const styles = [
+  mapStyle("𝐌𝐚𝐭𝐡 𝐁𝐨𝐥𝐝",       0x1D400 - A, 0x1D41A - a, 0x1D7CE - N),
+  mapStyle("𝗦𝗮𝗻𝘀 𝗦𝗲𝗿𝗶𝗳 𝗕𝗼𝗹𝗱",   0x1D5D4 - A, 0x1D5EE - a, 0x1D7EC - N),
+  singleAlphabetStyle("𝘚𝘢𝘯𝘴 𝘐𝘵𝘢𝘭𝘪𝘤", 0x1D608),
+  singleAlphabetStyle("𝓑𝓸𝓵𝓭 𝓢𝓬𝓻𝓲𝓹𝓽", 0x1D4D0),
+  singleAlphabetStyle("𝕯𝖔𝖚𝖇𝖑𝖊-𝕾𝖙𝖗𝖚𝖈𝖐 / 𝕱𝖗𝖆𝖐𝖙𝖚𝖗", 0x1D56C),
+];
+
+const sel = document.getElementById("styleSelect");
+styles.forEach(s => {
+  const opt = document.createElement("option");
+  opt.textContent = s.name;
+  sel.appendChild(opt);
+});
+
+const inputEl = document.getElementById("input");
+const outEl   = document.getElementById("output");
+const copyBtn = document.getElementById("copyBtn");
+
+function convert() {
+  const style = styles[sel.selectedIndex];
+  outEl.textContent = [...inputEl.value].map(style.transform).join("") || "...";
+}
+
+function copy() {
+  navigator.clipboard.writeText(outEl.textContent).then(() => {
+    const old = copyBtn.textContent;
+    copyBtn.textContent = "✓ Copied!";
+    setTimeout(() => copyBtn.textContent = old, 900);
+  });
+}
+
+inputEl.addEventListener("input", convert);
+sel.addEventListener("change", convert);
+copyBtn.addEventListener("click", copy);
+outEl.addEventListener("click", copy);   // NEW: click output box to copy
+
+convert();
+</script>
+</body>
+</html>
