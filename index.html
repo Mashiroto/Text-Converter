@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Font Changer</title>
+<title>Text Converter</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231a1a1c'/><text x='50' y='72' font-size='60' text-anchor='middle' fill='%23eee'>A</text></svg>">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -14,18 +15,20 @@
     justify-content: center;
     background: linear-gradient(135deg, #0a0a0a, #1c1c1e, #111113);
     font-family: 'Segoe UI', system-ui, sans-serif;
+    padding: 20px;
     color: #eee;
   }
 
   .card {
     width: 100%;
     max-width: 640px;
-    background: rgba(255,255,255,0.04);
-    backdrop-filter: blur(14px);
+    background: rgba(22,22,24,0.92);
     border: 1px solid rgba(255,255,255,0.09);
     border-radius: 20px;
     padding: 28px;
-    box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.7);
+    position: relative;
+    overflow: hidden;
   }
 
   .controls {
@@ -80,6 +83,7 @@
     padding: 18px 14px;
     font-size: 22px;
     word-break: break-word;
+    white-space: pre-wrap;   /* shows line breaks */
     line-height: 1.5;
     min-height: 70px;
     cursor: pointer;
@@ -87,6 +91,12 @@
   }
   .output:hover { border-color: #999; }
   .output:active { transform: scale(0.99); }
+
+  .output.pop { animation: pop .18s ease; }
+  @keyframes pop {
+    from { transform: scale(0.995); }
+    to   { transform: scale(1); }
+  }
 
   .copy-icon {
     position: absolute;
@@ -124,9 +134,20 @@
     opacity: 0.4;
     text-align: center;
   }
+
+  /* Cursor trail canvas (fullscreen) */
+  #trail {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    transform: translateZ(0);
+  }
 </style>
 </head>
 <body>
+<canvas id="trail"></canvas>
+
 <div class="card">
   <div class="controls">
     <select id="styleSelect"></select>
@@ -150,13 +171,18 @@ const A = "A".charCodeAt(0);
 const a = "a".charCodeAt(0);
 const N = "0".charCodeAt(0);
 
-// Full mapping style (upper + lower + digits each have their own glyphs)
-function mapStyle(name, upperOff, lowerOff, digitOff) {
+// Full mapping style, with optional exception table for special code points
+function mapStyle(name, upperOff, lowerOff, digitOff, upperExceptions = {}) {
   return {
     name,
+    chars: collectChars(upperOff, lowerOff, digitOff, upperExceptions),
     transform(c) {
       const code = c.charCodeAt(0);
-      if (code >= A && code <= A + 25 && upperOff !== null) return String.fromCodePoint(code + upperOff);
+      if (code >= A && code <= A + 25 && upperOff !== null) {
+        const ch = String.fromCharCode(code);
+        if (upperExceptions[ch]) return String.fromCodePoint(upperExceptions[ch]);
+        return String.fromCodePoint(code + upperOff);
+      }
       if (code >= a && code <= a + 25 && lowerOff !== null) return String.fromCodePoint(code + lowerOff);
       if (code >= N && code <= N + 9 && digitOff !== null) return String.fromCodePoint(code + digitOff);
       return c;
@@ -164,10 +190,31 @@ function mapStyle(name, upperOff, lowerOff, digitOff) {
   };
 }
 
-// Single-alphabet style: both upper AND lower case map to the one alphabet
+function collectChars(upperOff, lowerOff, digitOff, upperExceptions = {}) {
+  const m = new Map();
+  if (upperOff !== null)
+    for (let i = 0; i < 26; i++) {
+      const normal = String.fromCharCode(A + i);
+      const fancy  = upperExceptions[normal]
+        ? String.fromCodePoint(upperExceptions[normal])
+        : String.fromCodePoint(A + upperOff + i);
+      m.set(fancy, normal);
+    }
+  if (lowerOff !== null)
+    for (let i = 0; i < 26; i++) m.set(String.fromCodePoint(a + lowerOff + i), String.fromCharCode(a + i));
+  if (digitOff !== null)
+    for (let i = 0; i < 10; i++) m.set(String.fromCodePoint(N + digitOff + i), String.fromCharCode(N + i));
+  return m;
+}
+
+// Single-alphabet style: both cases map to the one alphabet
 function singleAlphabetStyle(name, baseOffset) {
+  const m = new Map();
+  for (let i = 0; i < 26; i++)
+    m.set(String.fromCodePoint(baseOffset + i), String.fromCharCode(a + i));
   return {
     name,
+    chars: m,
     transform(c) {
       const code = c.charCodeAt(0);
       const isUpper = code >= A && code <= A + 25;
@@ -182,27 +229,46 @@ function singleAlphabetStyle(name, baseOffset) {
 }
 
 const styles = [
-  mapStyle("𝐌𝐚𝐭𝐡 𝐁𝐨𝐥𝐝",       0x1D400 - A, 0x1D41A - a, 0x1D7CE - N),
-  mapStyle("𝗦𝗮𝗻𝘀 𝗦𝗲𝗿𝗶𝗳 𝗕𝗼𝗹𝗱",   0x1D5D4 - A, 0x1D5EE - a, 0x1D7EC - N),
-  singleAlphabetStyle("𝘚𝘢𝘯𝘴 𝘐𝘵𝘢𝘭𝘪𝘤", 0x1D608),
-  singleAlphabetStyle("𝓑𝓸𝓵𝓭 𝓢𝓬𝓻𝓲𝓹𝓽", 0x1D4D0),
-  singleAlphabetStyle("𝕯𝖔𝖚𝖇𝖑𝖊-𝕾𝖙𝖗𝖚𝖈𝖐 / 𝕱𝖗𝖆𝖐𝖙𝖚𝖗", 0x1D56C),
+  mapStyle("𝐌𝐚𝐭𝐡 𝐁𝐨𝐥𝐝",         0x1D400 - A, 0x1D41A - a, 0x1D7CE - N),
+  mapStyle("𝗦𝗮𝗻𝘀 𝗦𝗲𝗿𝗶𝗳 𝗕𝗼𝗹𝗱",     0x1D5D4 - A, 0x1D5EE - a, 0x1D7EC - N),
+  mapStyle("𝔻𝕠𝕦𝕓𝕝𝕖-𝕊𝕥𝕣𝕦𝕔𝕜",         0x1D538 - A, 0x1D552 - a, 0x1D7D8 - N, {
+    C: 0x2102,  // ℂ
+    H: 0x210D,  // ℍ
+    N: 0x2115,  // ℕ
+    P: 0x2119,  // ℙ
+    Q: 0x211A,  // ℚ
+    R: 0x211D,  // ℝ
+    Z: 0x2124,  // ℤ
+  }),
+  mapStyle("𝕭𝖔𝖑𝖉 𝕱𝖗𝖆𝖐𝖙𝖚𝖗",           0x1D56C - A, 0x1D586 - a, null),
+  singleAlphabetStyle("𝘚𝘢𝘯𝘴 𝘐𝘵𝘢𝘭𝘪𝘤",   0x1D608),
+  singleAlphabetStyle("𝓑𝓸𝓵𝓭 𝓢𝓬𝓻𝓲𝓹𝓽",   0x1D4D0),
 ];
 
-const sel = document.getElementById("styleSelect");
+// ---- Reverse map: fancy char -> normal letter/digit ----
+const reverseMap = new Map();
+styles.forEach(s => s.chars.forEach((normal, fancy) => reverseMap.set(fancy, normal)));
+
+const sel     = document.getElementById("styleSelect");
+const inputEl = document.getElementById("input");
+const outEl   = document.getElementById("output");
+const copyBtn = document.getElementById("copyBtn");
+
 styles.forEach(s => {
   const opt = document.createElement("option");
   opt.textContent = s.name;
   sel.appendChild(opt);
 });
 
-const inputEl = document.getElementById("input");
-const outEl   = document.getElementById("output");
-const copyBtn = document.getElementById("copyBtn");
-
 function convert() {
   const style = styles[sel.selectedIndex];
-  outEl.textContent = [...inputEl.value].map(style.transform).join("") || "...";
+  outEl.textContent = [...inputEl.value]
+    .map(c => style.transform(reverseMap.get(c) ?? c))
+    .join("") || "...";
+
+  outEl.classList.remove("pop");
+  void outEl.offsetWidth;
+  outEl.classList.add("pop");
 }
 
 function copy() {
@@ -216,7 +282,115 @@ function copy() {
 inputEl.addEventListener("input", convert);
 sel.addEventListener("change", convert);
 copyBtn.addEventListener("click", copy);
-outEl.addEventListener("click", copy);   // NEW: click output box to copy
+outEl.addEventListener("click", copy);
+
+// ---- Cursor trail ----
+const canvas = document.getElementById("trail");
+const ctx = canvas.getContext("2d");
+
+function resize() {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener("resize", resize);
+
+// --- all settings & state, declared FIRST so nothing is ever "used too early" ---
+const TRAIL_LIFE = 2000;
+const MAX_POINTS = Math.max(800, TRAIL_LIFE / 3);
+const points   = [];
+let lastX = null, lastY = null, lastT = null;
+let hue = 0;        // current rainbow color
+let brush = 45;     // current smoothed brush size
+let lastSpeed = 0;  // smoothed movement speed
+
+document.addEventListener("mousemove", e => {
+  const now = performance.now();
+
+  // if the mouse was resting, start a NEW stroke instead of connecting
+  if (lastT !== null && now - lastT > 120) {
+    lastX = null;
+  }
+
+  if (lastX !== null) {
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist >= 3) {
+      // smooth the speed value so the brush size glides instead of jumping
+      lastSpeed = lastSpeed * 0.7 + (dist / Math.max(now - lastT, 1)) * 0.3;
+
+      // insert intermediate points so the ribbon stays smooth on fast moves
+      const steps = Math.ceil(dist / 15);
+      for (let i = 1; i <= steps; i++) {
+        points.push({
+          x: lastX + dx * (i / steps),
+          y: lastY + dy * (i / steps),
+          born: now,
+          w: brush,
+          h: hue            // freeze this segment's color at birth
+        });
+      }
+      if (points.length > MAX_POINTS) points.splice(0, points.length - MAX_POINTS);
+    }
+  }
+  lastX = e.clientX; lastY = e.clientY; lastT = now;
+});
+
+document.addEventListener("mouseleave", () => { lastX = null; lastY = null; });
+
+function drawLoop() {
+  const now = performance.now();
+
+  hue = (hue + 0.5) % 360;   // cycle through the rainbow
+
+  // gently adapt the brush toward its target size (slow = wide, fast = thinner)
+  brush += ((45 - Math.min(lastSpeed, 2.5) * 12) - brush) * 0.08;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // drop expired points
+  while (points.length && now - points[0].born > TRAIL_LIFE) points.shift();
+
+  if (points.length > 2) {
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    for (let i = 1; i < points.length - 1; i++) {
+      const p    = points[i];
+      const next = points[i + 1];
+
+      const age  = now - p.born;
+      const life = 1 - age / TRAIL_LIFE;
+      const fade = life * life;
+
+      const MAX_ALPHA = 0.04;
+      let alpha = 0.07 * fade * (1 / (1 + lastSpeed * 0.25));
+      if (alpha > MAX_ALPHA) alpha = MAX_ALPHA;
+
+      const width = p.w * (0.4 + 0.6 * life);
+
+      const mx = (p.x + next.x) / 2;
+      const my = (p.y + next.y) / 2;
+
+      const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, width);
+      grad.addColorStop(0, "hsla(" + p.h + ", 90%, 65%, " + alpha.toFixed(4) + ")");
+      grad.addColorStop(1, "hsla(" + p.h + ", 90%, 65%, 0)");
+
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = width * 2;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.quadraticCurveTo(p.x, p.y, mx, my);
+      ctx.lineTo(next.x, next.y);
+      ctx.stroke();
+    }
+  }
+
+  requestAnimationFrame(drawLoop);
+}
+drawLoop();
 
 convert();
 </script>
