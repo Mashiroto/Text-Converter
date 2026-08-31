@@ -143,6 +143,24 @@
     z-index: -1;
     transform: translateZ(0);
   }
+
+  .untransformed {
+    position: relative;
+  }
+  .untransformed::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: -4px;              /* distance below the letter */
+    width: 4px;                /* dot size */
+    height: 4px;
+    border-radius: 50%;
+    background: #ff5555;
+    transform: translateX(-50%) translateX(1px);  /* <- nudge right here */
+  }
+
+
+
 </style>
 </head>
 <body>
@@ -163,7 +181,7 @@
   </div>
 
   <button class="copy-btn" id="copyBtn">⧉ Click to copy</button>
-  <p class="hint">Characters without a Unicode equivalent stay normal.</p>
+  <p class="hint">Characters without a Unicode equivalent stay normal <span style="color:#ff5555">•</span></p>
 </div>
 
 <script>
@@ -260,11 +278,32 @@ styles.forEach(s => {
   sel.appendChild(opt);
 });
 
+function escapeHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 function convert() {
   const style = styles[sel.selectedIndex];
-  outEl.textContent = [...inputEl.value]
-    .map(c => style.transform(reverseMap.get(c) ?? c))
-    .join("") || "...";
+
+  const chars = [...inputEl.value].map(c => {
+    const original = reverseMap.get(c) ?? c;  // normalize fancy -> plain first
+    const transformed = style.transform(original);
+    return { original, transformed, changed: transformed !== original };
+  });
+
+ // plain text for copying
+  const plain = chars.map(c => c.transformed).join("");
+  outEl.dataset.plain = plain;
+  copyBtn.disabled = false;
+
+  // marked-up display
+  outEl.innerHTML = chars.length
+    ? chars.map(c =>
+        c.changed || !/[a-z0-9]/i.test(c.original)
+          ? escapeHtml(c.transformed)
+          : `<span class="untransformed">${escapeHtml(c.transformed)}</span>`
+      ).join("")
+    : "...";
 
   outEl.classList.remove("pop");
   void outEl.offsetWidth;
@@ -272,7 +311,7 @@ function convert() {
 }
 
 function copy() {
-  navigator.clipboard.writeText(outEl.textContent).then(() => {
+  navigator.clipboard.writeText(outEl.dataset.plain || "").then(() => {
     const old = copyBtn.textContent;
     copyBtn.textContent = "✓ Copied!";
     setTimeout(() => copyBtn.textContent = old, 900);
