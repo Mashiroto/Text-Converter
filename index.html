@@ -1,7 +1,6 @@
 <!--
 Text Convertert
 Version: 1.1.1
-Last updated: 2026-08-31
 Author: Mashiroto (with Claude)
 
 Description:
@@ -11,6 +10,7 @@ Easy to use on PC and Phone, for fast converting!
 Changelog:
 - 1.1.0 (2026.08.26): small optic adjustments + mouse cursor trail
 - 1.1.1 (2026.08.31): marking NOT converterted letters/numbers with a red dot
+- 1.1.2 (2026.11.16): example text gets auto-selected for easier deleting
 -->
 <!DOCTYPE html>
 <html lang="en">
@@ -333,6 +333,18 @@ function copy() {
 }
 
 inputEl.addEventListener("input", convert);
+
+// Select the example text on first tap, but only if it's still untouched
+let exampleUntouched = true;
+
+inputEl.addEventListener("input", () => { exampleUntouched = false; });
+
+inputEl.addEventListener("focus", () => {
+  if (exampleUntouched) {
+    // small delay, because phones place the cursor after the focus event
+    setTimeout(() => inputEl.select(), 0);
+  }
+});
 sel.addEventListener("change", convert);
 copyBtn.addEventListener("click", copy);
 outEl.addEventListener("click", copy);
